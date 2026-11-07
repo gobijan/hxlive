@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
-# hxlive – Helix im Terminal, Live-Preview im Browserfenster daneben.
+# hxlive – Helix in the terminal, live preview in a browser window beside it.
 #
-#   hxlive [dateien…]   Server + Vorschau + Helix im aktuellen Ordner.
-#                       :q in Helix räumt alles wieder ab.
-#   hxlive init         index.html und style.css anlegen (falls nicht da)
-#   hxlive serve        nur den Live-Reload-Server starten
-#   hxlive close        alle offenen hxlive-Vorschaufenster schließen
-#   hxlive check        HTML mit superhtml prüfen
+#   hxlive [files…]     Server + preview + Helix in the current directory.
+#                       :q in Helix cleans everything up again.
+#   hxlive init         create index.html and style.css (if missing)
+#   hxlive serve        run only the live-reload server
+#   hxlive preview      (re)open the preview window
+#   hxlive close        close all open hxlive preview windows
+#   hxlive check        validate HTML with superhtml
 #
-# Läuft auf macOS und Linux (Hyprland/Omarchy oder beliebiger Desktop).
-# Absichtlich bash-3.2-kompatibel, damit das macOS-eigene /bin/bash reicht.
+# Works on macOS and Linux (Hyprland/Omarchy or any other desktop).
+# Deliberately bash-3.2 compatible so macOS's stock /bin/bash is enough.
 
 set -euo pipefail
 
@@ -23,48 +24,48 @@ die() { printf 'hxlive: %s\n' "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
 usage() {
-  sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'
   cat <<EOF
 
-Optionen:
-  -p, --port N   Port (Standard: $PORT, belegt → nächster freier)
-  -h, --help     diese Hilfe
-  -v, --version  Version
+Options:
+  -p, --port N   port (default: $PORT; if taken, the next free one is used)
+  -h, --help     show this help
+  -v, --version  show version
 
-Umgebungsvariablen:
-  HXLIVE_PORT      Startport
-  HXLIVE_EDITOR    Editor statt Helix (z. B. nvim)
-  HXLIVE_BROWSER   Pfad zu einem Chromium-artigen Browser
+Environment:
+  HXLIVE_PORT      starting port
+  HXLIVE_EDITOR    editor to use instead of Helix (e.g. nvim)
+  HXLIVE_BROWSER   path to a Chromium-based browser
 EOF
 }
 
-# --- Werkzeuge finden -------------------------------------------------------
+# --- Locating tools ---------------------------------------------------------
 
-# Arch nennt das Binary "helix", fast alle anderen (Homebrew, Nix, …) "hx".
-# "helix" zuerst, weil "hx" auf manchen Linux-Systemen ein Hex-Editor ist.
+# Arch names the binary "helix", almost everyone else (Homebrew, Nix, …) "hx".
+# "helix" comes first because "hx" is a hex editor on some Linux systems.
 find_editor() {
   if [ -n "${HXLIVE_EDITOR:-}" ]; then echo "$HXLIVE_EDITOR"; return; fi
   if have helix; then echo helix; return; fi
   if have hx; then echo hx; return; fi
-  die "Helix nicht gefunden (macOS: brew install helix, Arch: pacman -S helix)"
+  die "Helix not found (macOS: brew install helix, Arch: pacman -S helix)"
 }
 
-# Der Server läuft über browser-sync. Global installiert (z. B. per
-# `mise use -g npm:browser-sync`) startet er sofort, sonst einmalig via npx.
+# The server is browser-sync. If it is installed globally (e.g. via
+# `mise use -g npm:browser-sync`) it starts instantly, otherwise via npx.
 server_cmd() {
   if have browser-sync; then
     SERVER=(browser-sync)
   elif have npx; then
     SERVER=(npx --yes browser-sync)
   else
-    die "browser-sync oder Node.js fehlt (mise use -g npm:browser-sync)"
+    die "browser-sync or Node.js missing (mise use -g npm:browser-sync)"
   fi
   SERVER+=(start --server --watch --port "$PORT"
            --no-open --no-notify --no-ui --no-online)
 }
 
-# Gesucht wird ein Chromium-Abkömmling, weil nur der --app-Fenster ohne
-# Tabs und Adressleiste kann und ein eigenes Profil sauber abtrennbar ist.
+# We need a Chromium derivative: only those support --app windows without
+# tabs or address bar, and a separate profile keeps the window isolated.
 find_browser() {
   if [ -n "${HXLIVE_BROWSER:-}" ]; then echo "$HXLIVE_BROWSER"; return; fi
   local c
@@ -82,7 +83,7 @@ find_browser() {
       if have "$c"; then command -v "$c"; return; fi
     done
   fi
-  die "Kein Chromium-Browser gefunden (Chrome, Chromium, Brave, Edge). HXLIVE_BROWSER setzen."
+  die "No Chromium-based browser found (Chrome, Chromium, Brave, Edge). Set HXLIVE_BROWSER."
 }
 
 port_busy() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
@@ -91,17 +92,17 @@ pick_port() {
   local start=$PORT
   while port_busy "$PORT"; do
     PORT=$((PORT + 1))
-    [ "$PORT" -lt $((start + 50)) ] || die "Kein freier Port ab $start gefunden"
+    [ "$PORT" -lt $((start + 50)) ] || die "No free port found from $start"
   done
-  [ "$PORT" = "$start" ] || echo "hxlive: Port $start belegt, nehme $PORT" >&2
+  [ "$PORT" = "$start" ] || echo "hxlive: port $start is taken, using $PORT" >&2
 }
 
-# --- Vorschaufenster --------------------------------------------------------
+# --- Preview window ---------------------------------------------------------
 
 profile_dir() { echo "$CACHE/browser-$PORT"; }
 
-# Rechte Bildschirmhälfte auf dem Mac, als "x,y,w,h". NSScreen über JXA
-# braucht keine Bedienungshilfen-Freigabe.
+# Right half of the screen on macOS, as "x,y,w,h". NSScreen via JXA needs
+# no accessibility permission.
 mac_right_half() {
   osascript -l JavaScript -e '
     ObjC.import("AppKit");
@@ -121,8 +122,8 @@ open_preview() {
               --no-default-browser-check)
 
   if [ "$OS" = Darwin ]; then
-    # Chrome reißt den Fokus an sich. Vorher merken, wer vorne war
-    # (das Terminal), und danach zurückgeben.
+    # Chrome grabs focus. Remember which app was in front (the terminal)
+    # and hand focus back afterwards.
     local front geo
     front=$(lsappinfo info -only bundleid "$(lsappinfo front)" 2>/dev/null \
             | sed -n 's/.*="\(.*\)"/\1/p')
@@ -134,13 +135,13 @@ open_preview() {
     if [ -n "$front" ]; then sleep 0.8; open -b "$front"; fi
 
   elif [ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ] && have hyprctl; then
-    # Hyprland kachelt das Fenster rechts neben das Terminal;
-    # no_initial_focus lässt den Fokus bei Helix.
-    # Jedes Argument in '…', damit Leerzeichen in Pfaden die Shell überleben,
-    # in der Hyprland den Befehl ausführt.
+    # Hyprland tiles the window next to the terminal;
+    # no_initial_focus keeps focus on Helix.
+    # Wrap each argument in '…' so spaces in paths survive the shell
+    # Hyprland runs the command in.
     local cmd="" a out
     for a in "$browser" "${args[@]}"; do cmd+="'${a//\'/\'\\\'\'}' "; done
-    # Neue Lua-Config (0.55+) zuerst, sonst die klassische Dispatch-Syntax.
+    # Try the new Lua config syntax (0.55+) first, then classic dispatch.
     out=$(hyprctl dispatch "hl.dsp.exec_cmd(\"${cmd//\"/\\\"}\", { no_initial_focus = true })" 2>&1 || true)
     if [ "$out" != ok ]; then
       hyprctl dispatch exec "[no_initial_focus] $cmd" >/dev/null
@@ -151,7 +152,7 @@ open_preview() {
   fi
 }
 
-# Trifft nur Browser-Prozesse mit unserem Profil, nie das normale Chrome.
+# Only matches browser processes using our profile, never your normal browser.
 close_preview() {
   pkill -f -- "--user-data-dir=$(profile_dir)( |\$)" 2>/dev/null || true
 }
@@ -160,7 +161,7 @@ close_all() {
   pkill -f -- "--user-data-dir=$CACHE/browser-" 2>/dev/null || true
 }
 
-# --- Befehle ----------------------------------------------------------------
+# --- Commands ---------------------------------------------------------------
 
 cmd_dev() {
   local editor
@@ -168,15 +169,15 @@ cmd_dev() {
   pick_port
   server_cmd
   mkdir -p "$CACHE"
-  local log="$CACHE/server-$PORT.log" url="http://localhost:$PORT"
+  local log="$CACHE/server-$PORT.log"
 
   "${SERVER[@]}" >"$log" 2>&1 &
   local server=$!
-  # npx startet node als Kindprozess, deshalb auch die Kinder beenden.
+  # npx runs node as a child process, so kill the children too.
   trap 'pkill -P '"$server"' 2>/dev/null || true; kill '"$server"' 2>/dev/null || true; close_preview' EXIT
   trap 'exit 130' INT TERM
 
-  # npx lädt beim ersten Mal erst herunter, daher großzügig warten.
+  # npx downloads on first run, so wait generously.
   local i
   for i in $(seq 1 300); do
     port_busy "$PORT" && break
@@ -184,14 +185,14 @@ cmd_dev() {
     sleep 0.1
   done
   if ! port_busy "$PORT"; then
-    echo "hxlive: Server startet nicht, Log ($log):" >&2
+    echo "hxlive: server failed to start, log ($log):" >&2
     cat "$log" >&2
     exit 1
   fi
 
   open_preview
 
-  # Ohne Argumente: die üblichen Verdächtigen, sonst den Ordner.
+  # No arguments: open the usual suspects, otherwise the directory.
   if [ $# -eq 0 ]; then
     local f
     for f in index.html style.css script.js main.js; do
@@ -204,32 +205,32 @@ cmd_dev() {
 
 cmd_init() {
   if [ -e index.html ]; then
-    echo "index.html gibt es schon, lasse sie in Ruhe."
+    echo "index.html already exists, leaving it alone."
   else
     cat >index.html <<'EOF'
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Spielwiese</title>
+  <title>Playground</title>
   <link rel="stylesheet" href="style.css">
 </head>
 
 <body>
   <main>
-    <h1>Hallo!</h1>
-    <p>Ändere etwas, speichere mit <kbd>:w</kbd> und schau rechts zu.</p>
+    <h1>Hello!</h1>
+    <p>Change something, save with <kbd>:w</kbd> and watch the preview.</p>
   </main>
 </body>
 
 </html>
 EOF
-    echo "index.html angelegt."
+    echo "Created index.html."
   fi
   if [ -e style.css ]; then
-    echo "style.css gibt es schon, lasse sie in Ruhe."
+    echo "style.css already exists, leaving it alone."
   else
     cat >style.css <<'EOF'
 :root {
@@ -264,22 +265,22 @@ h1 {
   color: var(--accent);
 }
 EOF
-    echo "style.css angelegt."
+    echo "Created style.css."
   fi
 }
 
 cmd_check() {
-  have superhtml || die "superhtml fehlt (mise use -g superhtml)"
+  have superhtml || die "superhtml missing (mise use -g superhtml)"
   superhtml check "${1:-.}"
 }
 
-# --- Argumente --------------------------------------------------------------
+# --- Arguments --------------------------------------------------------------
 
 ARGS=()
 CMD=dev
 while [ $# -gt 0 ]; do
   case $1 in
-    -p|--port) [ $# -ge 2 ] || die "--port braucht eine Zahl"; PORT=$2; shift 2 ;;
+    -p|--port) [ $# -ge 2 ] || die "--port needs a number"; PORT=$2; shift 2 ;;
     --port=*)  PORT=${1#*=}; shift ;;
     -h|--help) usage; exit 0 ;;
     -v|--version) echo "hxlive $VERSION"; exit 0 ;;
