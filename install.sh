@@ -24,27 +24,6 @@ case ":$PATH:" in
   *) echo "! $BIN_DIR is not on your PATH – add it to your shell config." ;;
 esac
 
-# Only check dependencies, never install anything without asking.
-mac=false; [ "$(uname -s)" = Darwin ] && mac=true
-missing=0
-check() {
-  if eval "$2" >/dev/null 2>&1; then echo "✓ $1"; else echo "✗ $1 – $3"; missing=1; fi
-}
-
-if $mac; then
-  check Helix "command -v hx" "brew install helix"
-  check "Chromium-based browser" \
-    "ls -d /Applications/{'Google Chrome',Chromium,'Brave Browser','Microsoft Edge'}.app $HOME/Applications/*.app 2>/dev/null | grep -qE 'Chrome|Chromium|Brave|Edge'" \
-    "brew install --cask google-chrome (or chromium/brave)"
-else
-  check Helix "command -v helix || command -v hx" "sudo pacman -S helix"
-  check "Chromium-based browser" \
-    "command -v chromium || command -v google-chrome-stable || command -v brave" \
-    "sudo pacman -S chromium"
-fi
-check browser-sync "command -v browser-sync || command -v npx" \
-  "mise use -g npm:browser-sync   (or just Node.js, then it runs via npx)"
-check "superhtml (optional, for hxlive check)" "command -v superhtml" \
-  "mise use -g superhtml"
-
-[ $missing -eq 0 ] && echo && echo "Done. In any project directory just run: hxlive"
+# Only checks dependencies and editor setup, never installs anything.
+echo
+"$BIN_DIR/hxlive" doctor && echo && echo "Done. In any project directory just run: hxlive"

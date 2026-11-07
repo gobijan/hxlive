@@ -8,6 +8,7 @@
 #   hxlive preview      (re)open the preview window
 #   hxlive close        close all open hxlive preview windows
 #   hxlive check        validate HTML with superhtml
+#   hxlive doctor       check dependencies and editor setup
 #
 # Works on macOS and Linux (Hyprland/Omarchy or any other desktop).
 # Deliberately bash-3.2 compatible so macOS's stock /bin/bash is enough.
@@ -24,7 +25,7 @@ die() { printf 'hxlive: %s\n' "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
 usage() {
-  sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
   cat <<EOF
 
 Options:
@@ -269,6 +270,78 @@ EOF
   fi
 }
 
+# --- doctor -----------------------------------------------------------------
+
+DOCTOR_FAIL=0
+if [ -t 1 ]; then G=$'\033[32m' R=$'\033[31m' Y=$'\033[33m' N=$'\033[0m'; else G= R= Y= N=; fi
+ok()   { printf '  %s✓%s %s\n' "$G" "$N" "$1"; }
+bad()  { printf '  %s✗%s %s\n      → %s\n' "$R" "$N" "$1" "$2"; DOCTOR_FAIL=1; }
+hint() { printf '  %s•%s %s\n      → %s\n' "$Y" "$N" "$1" "$2"; }
+
+cmd_doctor() {
+  local mac=false editor="" b
+  [ "$OS" = Darwin ] && mac=true
+
+  echo "Required:"
+  if have helix; then editor=helix; elif have hx; then editor=hx; fi
+  if [ -n "$editor" ]; then ok "Helix ($editor)"
+  elif $mac; then bad "Helix" "brew install helix"
+  else bad "Helix" "sudo pacman -S helix"; fi
+
+  if b=$( (find_browser) 2>/dev/null ); then ok "Browser ($b)"
+  elif $mac; then bad "Chromium-based browser" "brew install --cask google-chrome (or chromium/brave)"
+  else bad "Chromium-based browser" "sudo pacman -S chromium"; fi
+
+  if have browser-sync; then ok "browser-sync"
+  elif have npx; then ok "browser-sync (via npx – faster: mise use -g npm:browser-sync)"
+  else bad "browser-sync" "mise use -g npm:browser-sync"; fi
+
+  echo
+  echo "Recommended:"
+  if have superhtml; then ok "superhtml (hxlive check)"
+  else hint "superhtml (for hxlive check)" "mise use -g superhtml"; fi
+  doctor_class_lsp "$editor"
+
+  return $DOCTOR_FAIL
+}
+
+# html-class-lsp completes CSS class names in class="…". It needs both the
+# binary and an entry in Helix's languages.toml; `hx --health html` reports
+# both: a configured server shows up in the list, with ✓ if it's on PATH.
+doctor_class_lsp() {
+  local editor=$1 name="html-class-lsp (CSS class completion)" health=""
+  local install="go install github.com/gobijan/html-class-lsp@latest"
+
+  if ! have html-class-lsp; then
+    hint "$name not installed" "$install"
+  fi
+  [ -n "$editor" ] || return 0
+
+  health=$("$editor" --health html 2>/dev/null | sed $'s/\033\\[[0-9;]*m//g' || true)
+  if printf '%s\n' "$health" | grep -q '✓ html-class-lsp:'; then
+    ok "$name, enabled in Helix"
+  elif printf '%s\n' "$health" | grep -q 'html-class-lsp:'; then
+    have html-class-lsp || return 0   # already hinted above
+    hint "$name configured but not found by Helix" "check PATH, then: $editor --health html"
+  else
+    hint "$name not enabled in Helix" "add this to ${XDG_CONFIG_HOME:-~/.config}/helix/languages.toml:"
+    local servers
+    # Keep whatever HTML servers Helix currently uses, then add ours.
+    servers=$(printf '%s\n' "$health" | sed -nE 's/^ *(✓|✘) ([^:]+):.*/"\2"/p' \
+              | paste -sd, - | sed 's/,/, /g')
+    cat <<EOF
+
+        [language-server.html-class-lsp]
+        command = "html-class-lsp"
+
+        [[language]]
+        name = "html"
+        language-servers = [${servers:+$servers, }"html-class-lsp"]
+
+EOF
+  fi
+}
+
 cmd_check() {
   have superhtml || die "superhtml missing (mise use -g superhtml)"
   superhtml check "${1:-.}"
@@ -291,7 +364,7 @@ done
 
 if [ ${#ARGS[@]} -gt 0 ]; then
   case ${ARGS[0]} in
-    init|serve|close|check|preview) CMD=${ARGS[0]}; ARGS=("${ARGS[@]:1}") ;;
+    init|serve|close|check|preview|doctor) CMD=${ARGS[0]}; ARGS=("${ARGS[@]:1}") ;;
   esac
 fi
 
@@ -301,5 +374,6 @@ case $CMD in
   serve)   pick_port; server_cmd; exec "${SERVER[@]}" ;;
   preview) open_preview ;;
   close)   close_all ;;
+  doctor)  cmd_doctor ;;
   check)   cmd_check ${ARGS[@]+"${ARGS[@]}"} ;;
 esac

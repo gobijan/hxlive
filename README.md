@@ -24,14 +24,26 @@ git clone https://github.com/gobijan/hxlive.git ~/Work/hxlive
 ~/Work/hxlive/install.sh        # symlinks into ~/.local/bin
 ```
 
-The installer checks dependencies and tells you what's missing:
+The installer runs `hxlive doctor`, which checks dependencies and tells you
+what's missing (run it again any time):
 
 | | macOS | Omarchy / Arch |
 |---|---|---|
 | Helix | `brew install helix` | `pacman -S helix` |
 | Browser | Chrome, Chromium, Brave or Edge | Chromium (Omarchy default) |
 | Server | `mise use -g npm:browser-sync` or just Node (then via `npx`) | same |
-| optional | `mise use -g superhtml` | same |
+| recommended | `mise use -g superhtml` | same |
+| recommended | [html-class-lsp](https://github.com/gobijan/html-class-lsp): `go install github.com/gobijan/html-class-lsp@latest` | same |
+
+### CSS class completion
+
+[html-class-lsp](https://github.com/gobijan/html-class-lsp) completes CSS
+class names inside `class="…"` from the stylesheets the page actually loads,
+jumps to their definition with `gd` and warns about undefined classes. Since
+hxlive is all about editing HTML and CSS side by side, `hxlive doctor` checks
+that it's installed *and* enabled in Helix (via `hx --health html`). If it
+isn't enabled, it prints the `languages.toml` snippet to add, keeping the
+HTML language servers you already use.
 
 ## Commands
 
@@ -43,6 +55,7 @@ hxlive serve        server only, logs in the terminal
 hxlive preview      (re)open the preview window
 hxlive close        close all hxlive preview windows
 hxlive check        validate HTML with superhtml
+hxlive doctor       check dependencies and editor setup
 -p, --port N        port (default 3000; if taken, hxlive uses the next free one)
 ```
 
