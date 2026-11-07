@@ -5,6 +5,8 @@ Helix in the terminal, live preview in a browser window beside it. Saving with
 the server and closes the window. Works on macOS and Linux (Omarchy/Hyprland
 or any other desktop).
 
+![hxlive: Helix on the left, live preview on the right, CSS class completion and reload on save](assets/demo.gif)
+
 ```sh
 mkdir playground && cd playground
 hxlive init      # create index.html + style.css
